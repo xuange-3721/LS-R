@@ -549,7 +549,40 @@ CSS 不会"替换"同名规则，而是**逐属性叠加** —— 于是 `align-
 
 ---
 
+### 4.8 装饰层必须 `pointer-events:none`；跨组件复用 class 前先看它的"定位依赖"
+
+**症状（真实事故 2026-11-20）**：导出弹窗打得开、画得对，但**除了右上角 ✕ 和 Esc，整窗点哪都没反应**。
+连"取消""导出"按钮、滑条、单选都点不动，只能 Ctrl+R。Console 无报错，`[expdlg] done` 也正常
+（说明 JS 早就跑完了，不是死循环）。
+
+**取证（一条命令定案）**：
+```js
+const b = document.querySelector(".ed-exp-go"); const r = b.getBoundingClientRect();
+document.elementFromPoint(r.left + r.width/2, r.top + r.height/2)
+// → <div class="ed-dcard-ph">  尺寸 1516 × 1004（＝整个窗口）
+```
+
+**根因**：`.ed-dcard-ph` 是为**草稿卡片**写的占位层：`position:absolute; inset:0`（+ flex 居中）。
+它的"定位祖先"是卡片（卡片有 `position:relative`）。我在导出弹窗里**复用了这个 class**，
+但新的缩略图容器 `.ed-exp-thumb` **忘了写 `position:relative`** → 它的定位祖先变成弹窗本身 →
+`inset:0` 直接铺满整窗、透明、且**默认可接收点击** → 把下面所有控件全吃掉。
+✕ 之所以能点，只是因为它被单独加了 `z-index:2`，浮在这层之上。
+
+**正确做法**：
+1. **纯装饰层一律 `pointer-events:none`**（占位图、遮罩纹理、进度条底、高亮框……）——
+   它们从语义上就不该接收点击，写死能永久免疫这类"看得见点不到"；
+2. **跨组件复用 class 前先读它的规则**：用了 `absolute/fixed` 的类，必须确认父级定位链；
+3. 需要"同一视觉、不同约束"时**另写一个类**（这次是 `.ed-exp-ph`），不要硬套；
+4. 加守卫：断言装饰层 `pointer-events:none`、容器 `position:relative`。
+
+**一句话检查**：这个绝对定位的层，父级是谁？它会不会铺满整屏？它吃点击吗？
+
+`#CSS #pointer-events #定位 #模态 #可点击性`
+
+---
+
 ## 5. 发版与分发
+
 
 ### 5.1 版本号有 4 处，漏一处就出事
 **清单**：`package.json` → `package-lock.json`（**两处**：顶层 `version` 与 `packages[""].version`）→ `docs/CHANGELOG.md` → `docs/release-<版本>.md`；再同步 `docs/DEVLOG.md` 的“当前状态”。
